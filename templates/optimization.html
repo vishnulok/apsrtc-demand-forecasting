@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fleet Optimization · APSRTC AI</title>
+  <meta name="description" content="Dynamically allocate buses across APSRTC routes using greedy demand-pressure optimization with frequency analysis." />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── NAVBAR ───────────────────────────────────────────────── -->
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">
+      <div class="logo-icon">🚌</div>
+      APSRTC AI
+    </a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/prediction">Predict Demand</a>
+      <a href="/optimization" class="active">Fleet Optimize</a>
+      <a href="/dashboard">Dashboard</a>
+    </div>
+    <div class="hamburger" aria-label="Menu" role="button" tabindex="0">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</nav>
+
+<div class="page-wrapper">
+  <div class="container">
+
+    <div class="page-header">
+      <h1>🚌 <span style="background:linear-gradient(135deg,var(--accent-purple),var(--accent-blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Dynamic Fleet Optimization</span></h1>
+      <p>Intelligently allocate buses across corridors based on ML predicted demand, departure frequency, and demand pressure</p>
+    </div>
+
+    <!-- ── INPUT ──────────────────────────────────────────── -->
+    <div class="card mb-2" style="max-width:750px;margin:0 auto 2rem;">
+
+      <h2 class="section-title">⚙️ Fleet Optimization Parameters</h2>
+
+      <form id="opt-form" novalidate>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+          <div class="form-group">
+            <label for="total_buses">Total Available Fleet Size (Buses)</label>
+            <input type="number" id="total_buses" name="total_buses"
+                   class="form-control" value="30" min="1" max="500" required />
+          </div>
+          <div class="form-group">
+            <label for="opt-date">Optimization Date</label>
+            <input type="date" id="opt-date" name="opt-date" class="form-control" required />
+          </div>
+        </div>
+
+        <div style="margin-top:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
+          <button type="submit" class="btn btn-accent btn-lg" id="opt-btn">
+            🚀 Run AI Fleet Optimization
+          </button>
+        </div>
+      </form>
+
+      <!-- Algorithm & Frequency explanation -->
+      <div style="margin-top:1.5rem;padding:1.2rem;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius-md);">
+        <div style="font-size:0.88rem;font-weight:700;color:var(--accent-blue);margin-bottom:0.4rem;">
+          💡 How Bus Allocation &amp; Frequency Work:
+        </div>
+        <ul style="padding-left:1.2rem;font-size:0.84rem;color:var(--text-secondary);line-height:1.7;">
+          <li><strong>Single-Trip ML Forecast</strong>: The model predicts passenger count per trip based on corridor attributes.</li>
+          <li><strong>Corridor Frequency</strong>: High-density corridors (e.g. <em>Hyderabad–Vijayawada, every 30 mins</em>) handle multiple daily departures.</li>
+          <li><strong>Why 1 vs 2 Buses?</strong> When single bus capacity (52 seats) is exceeded by corridor passenger load, a 2nd or 3rd bus is allocated to maintain scheduled frequency and prevent overcrowding.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── RESULTS ─────────────────────────────────────────── -->
+    <div id="opt-result" class="hidden animate-in">
+
+      <!-- Summary stats -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-icon icon-blue">🗺️</div>
+          <div class="stat-info">
+            <div class="s-label">Active Corridors</div>
+            <div class="s-value value-blue" id="opt-routes">—</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon icon-purple">🚌</div>
+          <div class="stat-info">
+            <div class="s-label">Fleet Distributed</div>
+            <div class="s-value value-purple" id="opt-buses">—</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon icon-orange">👥</div>
+          <div class="stat-info">
+            <div class="s-label">Avg Demand / Corridor</div>
+            <div class="s-value value-orange" id="opt-avg-demand">—</div>
+            <div class="s-sub">daily passengers</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon icon-green">📈</div>
+          <div class="stat-info">
+            <div class="s-label">Avg Fleet Occupancy</div>
+            <div class="s-value value-green" id="opt-avg-util">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-title">📊 Total Predicted Daily Passenger Demand</div>
+          <div class="chart-wrapper"><canvas id="chart-demand"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🚌 Allocated Bus Fleet Distribution</div>
+          <div class="chart-wrapper"><canvas id="chart-alloc"></canvas></div>
+        </div>
+        <div class="chart-card" style="grid-column: 1 / -1;">
+          <div class="chart-title">📈 Expected Occupancy / Utilization Rate (%)</div>
+          <div class="chart-wrapper"><canvas id="chart-util"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Route Table -->
+      <div class="table-card">
+        <div class="table-header">
+          <div>
+            <h3>🗃️ Route Allocation &amp; Frequency Dispatch Table</h3>
+            <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.2rem;">
+              Showing departure frequency, single-trip vs daily volume, and exact allocation rationale
+            </div>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table" id="opt-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Corridor &amp; Depot</th>
+                <th>Departure Frequency</th>
+                <th>Trip / Daily Demand</th>
+                <th>Allocated Buses</th>
+                <th>Daily Capacity</th>
+                <th>Occupancy Rate</th>
+                <th>Demand Level</th>
+                <th>Allocation Rationale (Why 1 vs 2 Buses)</th>
+              </tr>
+            </thead>
+            <tbody id="opt-table-body">
+              <!-- filled by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- end #opt-result -->
+
+  </div><!-- end .container -->
+
+  <footer class="footer">
+    <p>🚌 APSRTC AI Fleet Optimization · Frequency-Driven Greedy Demand Allocation</p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/script.js"></script>
+</body>
+</html>

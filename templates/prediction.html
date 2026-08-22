@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Predict Demand · APSRTC AI</title>
+  <meta name="description" content="Predict passenger demand for APSRTC bus routes using our trained Extra Trees ML model." />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .form-control[readonly] {
+      background: rgba(255, 255, 255, 0.04) !important;
+      color: var(--accent-cyan) !important;
+      font-weight: 700;
+      cursor: not-allowed;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    .badge-lock {
+      font-size: 0.72rem;
+      padding: 0.15rem 0.45rem;
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      color: var(--accent-cyan);
+      border-radius: 4px;
+      margin-left: 0.3rem;
+      font-weight: 600;
+      text-transform: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Inject route & capacity data for JS -->
+<script>
+  window.ROUTE_DATA = {{ route_data | tojson }};
+  window.BUS_CAPACITIES = {{ bus_capacities | tojson }};
+</script>
+
+<!-- ── NAVBAR ───────────────────────────────────────────────── -->
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">
+      <div class="logo-icon">🚌</div>
+      APSRTC AI
+    </a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/prediction" class="active">Predict Demand</a>
+      <a href="/optimization">Fleet Optimize</a>
+      <a href="/dashboard">Dashboard</a>
+    </div>
+    <div class="hamburger" aria-label="Menu" role="button" tabindex="0">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</nav>
+
+<div class="page-wrapper">
+  <div class="container">
+
+    <div class="page-header">
+      <h1>📊 <span style="background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Demand Prediction</span></h1>
+      <p>Select route and service type — fixed parameters (distance &amp; capacity) load automatically</p>
+    </div>
+
+    <!-- ── SCENARIO PRESETS ─────────────────────────────────── -->
+    <div class="card mb-2" style="padding: 1.2rem 1.5rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+        <div style="font-weight:700;font-size:0.92rem;color:var(--text-primary);">
+          ⚡ Operational Scenario Presets:
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applyPreset('normal')">🏢 Regular Weekday</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applyPreset('weekend')">🎉 Weekend Rush (+25%)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applyPreset('festival')">🎊 Festival / Holiday (+50%)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applyPreset('offpeak')">🌙 Low / Off-Peak (-30%)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INPUT FORM ──────────────────────────────────────── -->
+    <div class="card mb-2">
+      <h2 class="section-title">🛣️ Route &amp; Service Configuration</h2>
+      <form id="prediction-form" novalidate>
+        <div class="form-grid">
+
+          <!-- Route -->
+          <div class="form-group">
+            <label for="route">Route Corridor</label>
+            <select id="route" name="route" class="form-control" required>
+              {% for r in routes %}
+              <option value="{{ r }}">{{ r }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Bus Type -->
+          <div class="form-group">
+            <label for="bus_type">Bus Service Type</label>
+            <select id="bus_type" name="bus_type" class="form-control" required>
+              {% for bt in bus_types %}
+              <option value="{{ bt }}">{{ bt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Depot (Auto-assigned to route) -->
+          <div class="form-group">
+            <label for="depot">Operating Depot <span class="badge-lock">🔒 Auto</span></label>
+            <input type="text" id="depot" name="depot" class="form-control"
+                   value="Hyderabad" readonly tabindex="-1" />
+          </div>
+
+          <!-- Seating Capacity (Readonly - auto from bus type) -->
+          <div class="form-group">
+            <label for="capacity">Seating Capacity <span class="badge-lock">🔒 Fixed by Bus Type</span></label>
+            <input type="number" id="capacity" name="capacity" class="form-control"
+                   value="52" readonly tabindex="-1" required />
+          </div>
+
+          <!-- Route Distance (Readonly - fixed corridor distance) -->
+          <div class="form-group">
+            <label for="distance_km">Route Distance (km) <span class="badge-lock">🔒 Fixed Corridor</span></label>
+            <input type="number" id="distance_km" name="distance_km" class="form-control"
+                   value="275" readonly tabindex="-1" required />
+          </div>
+
+          <!-- Fare -->
+          <div class="form-group">
+            <label for="fare_per_passenger">Passenger Fare (₹)</label>
+            <input type="number" id="fare_per_passenger" name="fare_per_passenger" class="form-control"
+                   value="300" min="1" step="0.5" required />
+          </div>
+
+          <!-- Date -->
+          <div class="form-group">
+            <label for="date">Travel Date</label>
+            <input type="date" id="date" name="date" class="form-control" required />
+          </div>
+
+          <!-- Previous Passengers -->
+          <div class="form-group">
+            <label for="previous_passengers">Previous Day Passengers <small style="color:var(--accent-blue);font-weight:600;">(Trend Driver)</small></label>
+            <input type="number" id="previous_passengers" name="previous_passengers"
+                   class="form-control" min="0" placeholder="Auto-inferred from corridor avg" />
+          </div>
+
+        </div>
+
+        <div style="margin-top:1.5rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
+          <button type="submit" class="btn btn-primary btn-lg" id="predict-btn">
+            🔮 Run ML Demand Prediction
+          </button>
+          <button type="button" class="btn btn-secondary" id="reset-btn" onclick="syncAllFields()">Reset to Defaults</button>
+          <span id="pred-status-indicator" style="font-size:0.85rem;color:var(--text-muted);margin-left:auto;"></span>
+        </div>
+      </form>
+    </div>
+
+    <!-- ── RESULT SECTION ─────────────────────────────────── -->
+    <div id="result-section" class="hidden animate-in">
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.2rem;">
+          <h2 class="section-title" style="margin-bottom:0;">✅ Prediction Results &amp; Occupancy Analysis</h2>
+          <div id="pred-route-badge" style="font-size:0.85rem;color:var(--accent-cyan);font-weight:600;"></div>
+        </div>
+
+        <div class="result-grid">
+          <div class="result-card">
+            <div class="label">Predicted Passengers</div>
+            <div class="value value-blue" id="res-passengers">—</div>
+            <div class="sub">passengers expected</div>
+          </div>
+          <div class="result-card">
+            <div class="label">Occupancy Rate (Single Bus)</div>
+            <div class="value value-orange" id="res-occupancy">—</div>
+            <div class="sub" id="res-occupancy-sub">of single bus capacity</div>
+          </div>
+          <div class="result-card">
+            <div class="label">Demand Level</div>
+            <div style="margin:0.5rem 0;">
+              <span id="res-level" class="badge badge-medium">—</span>
+            </div>
+            <div class="sub" id="res-level-desc">based on occupancy</div>
+          </div>
+          <div class="result-card">
+            <div class="label">Recommended Buses</div>
+            <div class="value value-purple" id="res-buses">—</div>
+            <div class="sub">buses needed</div>
+          </div>
+        </div>
+
+        <!-- Occupancy progress bar -->
+        <div style="margin-top:1.75rem;padding:1.2rem;background:rgba(255,255,255,0.03);border-radius:var(--radius-md);border:1px solid var(--border-color);">
+          <div style="display:flex;justify-content:space-between;font-size:0.88rem;font-weight:600;margin-bottom:0.6rem;">
+            <span>Real-Time Occupancy Gauge</span>
+            <span id="res-occ-label" style="font-weight:700;">0%</span>
+          </div>
+          <div class="progress-bar" style="height:12px;background:rgba(255,255,255,0.08);border-radius:6px;">
+            <div id="occupancy-bar" class="progress-fill fill-blue" style="width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--text-muted);margin-top:0.4rem;">
+            <span>0% (Empty)</span>
+            <span style="color:var(--accent-green)">LOW (&lt;50%)</span>
+            <span style="color:var(--accent-orange)">MEDIUM (50%–79%)</span>
+            <span style="color:var(--accent-red)">HIGH (≥80% Crowded)</span>
+            <span>100%+</span>
+          </div>
+        </div>
+
+        <!-- Interactive Bus Flow Dispatch Simulator -->
+        <div style="margin-top:1.5rem;padding:1.4rem;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.08));border:1px solid rgba(59,130,246,0.3);border-radius:var(--radius-lg);">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.75rem;">
+            <div>
+              <div style="font-weight:700;font-size:1rem;color:var(--text-primary);">🎛️ Live Bus Flow Dispatch Simulator</div>
+              <p style="font-size:0.82rem;color:var(--text-secondary);">Test how adding or reducing dispatched buses on this route changes occupancy in real-time:</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <span style="font-size:0.85rem;color:var(--text-muted);">Dispatched Buses:</span>
+              <span id="sim-buses-val" style="font-family:'Outfit',sans-serif;font-size:1.4rem;font-weight:800;color:var(--accent-cyan);">1</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <span style="font-size:0.8rem;color:var(--text-muted);">1 bus</span>
+            <input type="range" id="sim-buses-slider" min="1" max="10" value="1" step="1" style="flex:1;cursor:pointer;" oninput="updateBusFlowSimulation(this.value)" />
+            <span style="font-size:0.8rem;color:var(--text-muted);">10 buses</span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-top:1rem;">
+            <div style="background:rgba(0,0,0,0.25);padding:0.75rem 1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Total Fleet Capacity</div>
+              <div id="sim-total-cap" style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:0.2rem;">52 seats</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);padding:0.75rem 1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Effective Occupancy</div>
+              <div id="sim-eff-occ" style="font-size:1.1rem;font-weight:700;color:var(--accent-orange);margin-top:0.2rem;">78.8%</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);padding:0.75rem 1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Simulated Demand Level</div>
+              <div id="sim-eff-level" style="margin-top:0.2rem;"><span class="badge badge-medium">MEDIUM</span></div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);padding:0.75rem 1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Passengers per Bus</div>
+              <div id="sim-pass-per-bus" style="font-size:1.1rem;font-weight:700;color:var(--accent-green);margin-top:0.2rem;">41</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Comparison Chart -->
+      <div class="card mt-2">
+        <h3 class="section-title">📊 Capacity vs Demand Comparison</h3>
+        <div class="chart-wrapper">
+          <canvas id="pred-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Demand Level Guide -->
+      <div class="card mt-2">
+        <h3 class="section-title">📖 Demand Level Reference Matrix</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+          <div style="padding:1.1rem;background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius-md);">
+            <span class="badge badge-high">HIGH DEMAND</span>
+            <p style="margin-top:0.6rem;font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">Occupancy ≥ 80% · Severe passenger overcrowding risk. Additional buses must be deployed immediately.</p>
+          </div>
+          <div style="padding:1.1rem;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-md);">
+            <span class="badge badge-medium">MEDIUM DEMAND</span>
+            <p style="margin-top:0.6rem;font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">Occupancy 50%–79% · Balanced transit flow and profitable passenger load. Standard frequency maintained.</p>
+          </div>
+          <div style="padding:1.1rem;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-md);">
+            <span class="badge badge-low">LOW DEMAND</span>
+            <p style="margin-top:0.6rem;font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">Occupancy &lt; 50% · Excess seating capacity. Consider optimizing frequency or rerouting buses to busy corridors.</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end #result-section -->
+
+  </div><!-- end .container -->
+
+  <footer class="footer">
+    <p>🚌 APSRTC AI Demand Forecasting · ML predictions via <code>apsrtc_demand_model.pkl</code></p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/script.js"></script>
+</body>
+</html>
