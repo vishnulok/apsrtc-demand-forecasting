@@ -213,6 +213,48 @@ DEPOTS = ["Guntur", "Hyderabad", "Kurnool", "Nellore", "Tirupati", "Vijayawada",
 ROUTE_DATA_MAP = {r["route"]: r for r in ROUTES_CONFIG}
 
 
+# ---------------------------------------------------------------------------
+# AP holiday calendar (month, day) for feature engineering
+# ---------------------------------------------------------------------------
+_AP_HOLIDAYS = {
+    (1, 1), (1, 14), (1, 26),
+    (3, 17), (3, 18),
+    (4, 1), (4, 14), (4, 21),
+    (5, 1), (6, 17), (8, 15),
+    (9, 5), (9, 6), (9, 7),
+    (10, 2), (10, 12), (10, 13), (10, 14), (10, 24),
+    (11, 5), (12, 25),
+}
+
+
+def _season_of_month(month):
+    """Map calendar month to season name used during model training."""
+    if month in (12, 1, 2):    return "winter"
+    if month in (3, 4, 5):     return "summer"
+    if month in (6, 7, 8, 9):  return "monsoon"
+    return "post_monsoon"
+
+
+# Each route has a specific average occupancy ratio (e.g., from 0.50 to 0.82)
+_ROUTE_BASE_OCCUPANCY = {
+    "Hyderabad-Vijayawada": 0.82,
+    "Hyderabad-Visakhapatnam": 0.80,
+    "Hyderabad-Tirupati": 0.78,
+    "Guntur-Hyderabad": 0.76,
+    "Vijayawada-Visakhapatnam": 0.74,
+    "Nellore-Chennai": 0.72,
+    "Rajahmundry-Hyderabad": 0.70,
+    "Vijayawada-Tirupati": 0.68,
+    "Ongole-Hyderabad": 0.66,
+    "Kurnool-Hyderabad": 0.64,
+    "Eluru-Hyderabad": 0.62,
+    "Anantapur-Bangalore": 0.60,
+    "Kadapa-Hyderabad": 0.58,
+    "Kakinada-Vijayawada": 0.56,
+    "Chittoor-Bangalore": 0.52,
+}
+
+
 def build_features(route, bus_type, depot, capacity, distance_km,
                    fare_per_passenger, date_obj,
                    previous_passengers=None,
@@ -220,14 +262,18 @@ def build_features(route, bus_type, depot, capacity, distance_km,
                    previous_5_avg=None,
                    previous_7_avg=None,
                    route_avg_demand=None):
-    """Build the exact feature DataFrame expected by the ML model pipeline."""
+    """Build the feature DataFrame expected by the ML model pipeline."""
 
     base_demand = ROUTE_DATA_MAP.get(route, {}).get("base_demand", 150)
-    route_avg = float(route_avg_demand) if route_avg_demand is not None else float(base_demand)
+    freq_mult   = ROUTE_DATA_MAP.get(route, {}).get("frequency_multiplier", 3.0)
+    
+    base_occ = _ROUTE_BASE_OCCUPANCY.get(route, 0.70)
+    base_demand_scaled = capacity * base_occ
+    route_avg   = float(route_avg_demand) if route_avg_demand is not None else float(base_demand_scaled)
 
     # Intelligently propagate previous trend if provided
     if previous_passengers is not None:
-        p = float(previous_passengers)
+        p          = float(previous_passengers)
         prev_pass  = p
         prev_3_avg = float(previous_3_avg) if previous_3_avg is not None else p
         prev_5_avg = float(previous_5_avg) if previous_5_avg is not None else p
@@ -239,11 +285,21 @@ def build_features(route, bus_type, depot, capacity, distance_km,
         prev_5_avg = float(route_avg)
         prev_7_avg = float(route_avg)
 
-    # Format temporal attributes to match trained model pipeline
-    month_name = date_obj.strftime("%B")        # 'January', 'August', etc.
-    day_name   = date_obj.strftime("%A")        # 'Monday', 'Saturday', etc.
-    day_of_year = date_obj.timetuple().tm_yday  # 1..366
-    week_of_year = int(date_obj.strftime("%W")) # 0..53
+    # Temporal attributes
+    month_name   = date_obj.strftime("%B")        # 'January', 'August', …
+    day_name     = date_obj.strftime("%A")        # 'Monday', 'Saturday', …
+    day_of_year  = date_obj.timetuple().tm_yday  # 1..366
+    week_of_year = int(date_obj.strftime("%W"))  # 0..53
+    month        = date_obj.month
+    dow          = date_obj.weekday()             # 0=Mon, 6=Sun
+
+    # Engineered features used by the retrained model
+    is_weekend  = int(dow >= 5)
+    is_hol      = int((month, date_obj.day) in _AP_HOLIDAYS)
+    quarter     = (month - 1) // 3 + 1
+    season      = _season_of_month(month)
+    revenue_per_km = round(float(fare_per_passenger) / max(float(distance_km), 1), 4)
+    demand_score   = round(float(base_demand) * freq_mult / 100, 4)
 
     features = {
         "route":                str(route),
@@ -261,6 +317,13 @@ def build_features(route, bus_type, depot, capacity, distance_km,
         "previous_5_avg":       float(prev_5_avg),
         "previous_7_avg":       float(prev_7_avg),
         "route_avg_demand":     float(route_avg),
+        # New features for retrained model
+        "is_weekend":           is_weekend,
+        "is_holiday":           is_hol,
+        "quarter":              quarter,
+        "season":               season,
+        "revenue_per_km":       revenue_per_km,
+        "demand_score":         demand_score,
     }
     return pd.DataFrame([features])
 
@@ -398,8 +461,7 @@ def api_optimize():
             freq_mult    = r.get("frequency_multiplier", 3.0)
             corridor_type = r.get("corridor_type", "Inter-City Route")
 
-            X = build_features(route, selected_bus_type, depot, capacity, distance_km, fare, date_obj,
-                               base_demand, base_demand, base_demand, base_demand, base_demand)
+            X = build_features(route, selected_bus_type, depot, capacity, distance_km, fare, date_obj)
             
             # Single trip ML demand prediction
             single_pred = max(1, round(float(model.predict(X)[0])))

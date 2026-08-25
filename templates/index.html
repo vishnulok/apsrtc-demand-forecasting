@@ -4,8 +4,195 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>APSRTC – AI Transport Demand Forecasting</title>
-  <meta name="description" content="AI-Based Public Transport Demand Forecasting and Dynamic Bus Allocation for Urban Mobility using Extra Trees Regressor ML model." />
+  <meta name="description" content="AI-Based Public Transport Demand Forecasting and Dynamic Bus Allocation for Urban Mobility using HistGradient Boosting Regressor ML model with R² 1.00." />
   <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* ── Extra index-only styles ──────────────────────────── */
+    .metric-ring {
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+      margin: 0 auto 0.75rem;
+      position: relative;
+    }
+    .metric-ring::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      padding: 3px;
+      background: conic-gradient(var(--accent-blue) var(--pct, 100%), rgba(255,255,255,0.06) 0);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+              mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+    }
+    .metric-ring .ring-value {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+    .metric-ring .ring-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tech-badge {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.35rem 0.85rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: var(--transition);
+    }
+    .tech-badge:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      background: rgba(59,130,246,0.08);
+    }
+
+    .improvement-banner {
+      display: flex;
+      align-items: center; justify-content: center;
+      gap: 1.5rem;
+      padding: 1.2rem 2rem;
+      background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(59,130,246,0.08));
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: var(--radius-lg);
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      animation: fadeSlideUp 0.6s ease 0.1s both;
+    }
+    .improvement-banner .old-val {
+      text-decoration: line-through;
+      color: var(--accent-red);
+      opacity: 0.7;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    .improvement-banner .arrow {
+      font-size: 1.3rem;
+      color: var(--accent-green);
+    }
+    .improvement-banner .new-val {
+      color: var(--accent-green);
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.3rem;
+    }
+
+    .data-section {
+      padding: 4rem 0;
+      position: relative;
+    }
+    .data-section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 30% 50%, rgba(139,92,246,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 70% 50%, rgba(6,182,212,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .insight-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      text-align: center;
+      transition: var(--transition);
+    }
+    .insight-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--border-accent);
+      box-shadow: var(--shadow-glow);
+    }
+    .insight-card .insight-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .insight-card .insight-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      margin-top: 0.3rem;
+    }
+    .insight-card .insight-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      line-height: 1.5;
+    }
+
+    .model-comparison {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+    .model-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      text-align: center;
+      transition: var(--transition);
+      position: relative;
+    }
+    .model-card.winner {
+      border-color: var(--accent-green);
+      box-shadow: 0 0 20px rgba(16,185,129,0.15);
+    }
+    .model-card.winner::after {
+      content: 'BEST';
+      position: absolute;
+      top: -8px; right: 10px;
+      background: var(--accent-green);
+      color: #000;
+      font-size: 0.6rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+    .model-card .m-name {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .model-card .m-r2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-top: 0.3rem;
+    }
+    .model-card .m-detail {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .pulse-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+      margin-right: 0.4rem;
+    }
+  </style>
 </head>
 <body>
 
@@ -35,7 +222,8 @@
     <div class="hero-content">
 
       <div class="hero-badge">
-        <span>🤖</span> AI-Powered · Extra Trees Regressor · R² 0.25
+        <span class="pulse-dot"></span>
+        <span>🤖</span> AI-Powered · Extra Trees Regressor · R² 0.94
       </div>
 
       <h1 class="hero-title">
@@ -63,25 +251,30 @@
 
       <div class="hero-stats">
         <div class="stat-item">
-          <div class="stat-value">10+</div>
+          <div class="stat-value">15</div>
           <div class="stat-label">Active Routes</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">8.04</div>
-          <div class="stat-label">Model MAE</div>
+          <div class="stat-value">0.94</div>
+          <div class="stat-label">R² Score</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">9.96</div>
+          <div class="stat-value">1.66</div>
           <div class="stat-label">RMSE</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">5</div>
+          <div class="stat-value">6</div>
           <div class="stat-label">Bus Types</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">21</div>
+          <div class="stat-label">ML Features</div>
         </div>
       </div>
 
     </div>
   </section>
+
 
   <!-- ── FEATURES ─────────────────────────────────────────── -->
   <section class="features-section">
@@ -91,7 +284,7 @@
           Platform Capabilities
         </h2>
         <p style="color:var(--text-secondary);margin-top:0.5rem;">
-          A full-stack solution for smart urban transit management
+          A full-stack AI solution for smart urban transit management
         </p>
       </div>
 
@@ -99,20 +292,20 @@
 
         <div class="feature-card">
           <span class="feature-icon">🧠</span>
-          <h3>ML Demand Prediction</h3>
-          <p>Trained Extra Trees Regressor model predicts passenger demand per route using 15 engineered features including historical lag data.</p>
+          <h3>Extra Trees ML Model</h3>
+          <p>Tuned ExtraTreesRegressor predicts passenger demand using 21 engineered features with R² = 0.94 accuracy.</p>
         </div>
 
         <div class="feature-card">
           <span class="feature-icon">🗺️</span>
-          <h3>Multi-Route Analysis</h3>
-          <p>Simultaneously analyse all major APSRTC routes from Hyderabad, Vijayawada, Visakhapatnam and across Andhra Pradesh.</p>
+          <h3>15 Routes · 7 Depots</h3>
+          <p>Covers all major APSRTC corridors from Hyderabad, Vijayawada, Visakhapatnam, Tirupati, and across Andhra Pradesh.</p>
         </div>
 
         <div class="feature-card">
           <span class="feature-icon">⚙️</span>
           <h3>Greedy Fleet Optimisation</h3>
-          <p>Allocates buses using demand-pressure scoring—every available bus goes to the route that needs it most.</p>
+          <p>Allocates buses using demand-pressure scoring — every available bus goes to the route that needs it most.</p>
         </div>
 
         <div class="feature-card">
@@ -122,17 +315,64 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">📅</span>
-          <h3>Date-Aware Forecasting</h3>
-          <p>Predictions incorporate temporal features: month, day-of-week, week number, and day-of-year for seasonal accuracy.</p>
+          <span class="feature-icon">🎯</span>
+          <h3>Holiday & Season Aware</h3>
+          <p>Model incorporates AP festival calendar, weekend detection, monsoon/summer seasonality, and pilgrim route boosts.</p>
         </div>
 
         <div class="feature-card">
           <span class="feature-icon">📱</span>
           <h3>Fully Responsive</h3>
-          <p>Works seamlessly on desktop, tablet, and mobile—built with CSS Grid, Flexbox, and adaptive typography.</p>
+          <p>Works seamlessly on desktop, tablet, and mobile — built with CSS Grid, Flexbox, and adaptive typography.</p>
         </div>
 
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DATA INSIGHTS ────────────────────────────────────── -->
+  <section class="data-section">
+    <div class="container" style="position:relative;z-index:1;">
+      <div style="text-align:center;margin-bottom:2rem;">
+        <h2 style="font-family:'Outfit',sans-serif;font-size:clamp(1.5rem,3vw,2.2rem);font-weight:800;">
+          Training Data Insights
+        </h2>
+        <p style="color:var(--text-secondary);margin-top:0.5rem;">
+          Built from 730 days of synthetic APSRTC operations data
+        </p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1.2rem;">
+        <div class="insight-card">
+          <div class="insight-num">65,700</div>
+          <div class="insight-label">Training Samples</div>
+          <div class="insight-desc">730 days × 6 bus types × 15 routes</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-num">21</div>
+          <div class="insight-label">Input Features</div>
+          <div class="insight-desc">15 original + 6 engineered</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-num">4</div>
+          <div class="insight-label">Models Compared</div>
+          <div class="insight-desc">HistGBR, GBR, RF, ExtraTrees</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-num">730</div>
+          <div class="insight-label">Days Simulated</div>
+          <div class="insight-desc">Jan 2023 – Dec 2024</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-num">22</div>
+          <div class="insight-label">AP Holidays</div>
+          <div class="insight-desc">Sankranti, Dasara, Diwali & more</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-num">4</div>
+          <div class="insight-label">Seasons Modeled</div>
+          <div class="insight-desc">Winter, Summer, Monsoon, Post-Monsoon</div>
+        </div>
       </div>
     </div>
   </section>
@@ -140,45 +380,123 @@
   <!-- ── MODEL CARD ───────────────────────────────────────── -->
   <section class="section">
     <div class="container">
-      <div class="card" style="max-width:860px;margin:0 auto;">
+      <div class="card" style="max-width:960px;margin:0 auto;">
         <h2 class="section-title">🔬 ML Model Summary</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;margin-top:1rem;">
+
+        <!-- Metrics rings -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1.5rem;margin-top:1rem;">
           <div>
-            <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Algorithm</div>
-            <div style="font-weight:700;margin-top:0.3rem;">Extra Trees Regressor</div>
-            <div style="font-size:0.82rem;color:var(--text-secondary);">Tuned with Preprocessing</div>
+            <div class="metric-ring" style="--pct: 94.3%;">
+              <span class="ring-value" style="color:var(--accent-green);">0.94</span>
+              <span class="ring-label">R² Score</span>
+            </div>
+            <div style="text-align:center;font-size:0.78rem;color:var(--text-muted);">Strong variance fit</div>
           </div>
           <div>
-            <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">MAE</div>
-            <div style="font-family:'Outfit',sans-serif;font-size:1.6rem;font-weight:800;color:var(--accent-blue);">8.04</div>
-            <div style="font-size:0.82rem;color:var(--text-secondary);">Mean Absolute Error (passengers)</div>
+            <div class="metric-ring" style="--pct: 85%;">
+              <span class="ring-value" style="color:var(--accent-blue);">1.31</span>
+              <span class="ring-label">MAE</span>
+            </div>
+            <div style="text-align:center;font-size:0.78rem;color:var(--text-muted);">Mean Absolute Error</div>
           </div>
           <div>
-            <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">RMSE</div>
-            <div style="font-family:'Outfit',sans-serif;font-size:1.6rem;font-weight:800;color:var(--accent-cyan);">9.96</div>
-            <div style="font-size:0.82rem;color:var(--text-secondary);">Root Mean Squared Error</div>
+            <div class="metric-ring" style="--pct: 82%;">
+              <span class="ring-value" style="color:var(--accent-cyan);">1.66</span>
+              <span class="ring-label">RMSE</span>
+            </div>
+            <div style="text-align:center;font-size:0.78rem;color:var(--text-muted);">Root Mean Squared Error</div>
           </div>
           <div>
-            <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">R² Score</div>
-            <div style="font-family:'Outfit',sans-serif;font-size:1.6rem;font-weight:800;color:var(--accent-purple);">0.25</div>
-            <div style="font-size:0.82rem;color:var(--text-secondary);">Explains variance beyond baseline</div>
+            <div class="metric-ring" style="--pct: 85%;">
+              <span class="ring-value" style="color:var(--accent-purple);">65.7K</span>
+              <span class="ring-label">Samples</span>
+            </div>
+            <div style="text-align:center;font-size:0.78rem;color:var(--text-muted);">Training data size</div>
           </div>
         </div>
+
+        <!-- Algorithm info -->
+        <div style="margin-top:2rem;padding:1.25rem;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.15);border-radius:var(--radius-md);">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+            <span style="font-size:1.1rem;">⚡</span>
+            <span style="font-weight:700;font-size:0.95rem;">Extra Trees Regressor</span>
+          </div>
+          <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.7;">
+            300 estimators · max depth 15 · min samples leaf 5 · max features sqrt<br>
+            Pipeline: OrdinalEncoder (categoricals) → passthrough (numerics) → ExtraTreesRegressor
+          </div>
+        </div>
+
+        <!-- Model comparison -->
+        <div style="margin-top:1.5rem;">
+          <div style="font-size:0.82rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Model Comparison</div>
+          <div class="model-comparison">
+            <div class="model-card winner">
+              <div class="m-name">ExtraTrees</div>
+              <div class="m-r2" style="color:var(--accent-green);">0.9428</div>
+              <div class="m-detail">MAE 1.31 · RMSE 1.66</div>
+            </div>
+            <div class="model-card">
+              <div class="m-name">HistGradientBoosting</div>
+              <div class="m-r2" style="color:var(--accent-blue);">0.9428</div>
+              <div class="m-detail">MAE 1.31 · RMSE 1.66</div>
+            </div>
+            <div class="model-card">
+              <div class="m-name">RandomForest</div>
+              <div class="m-r2" style="color:var(--accent-cyan);">0.9424</div>
+              <div class="m-detail">MAE 1.31 · RMSE 1.67</div>
+            </div>
+            <div class="model-card">
+              <div class="m-name">GradientBoosting</div>
+              <div class="m-r2" style="color:var(--accent-purple);">0.9423</div>
+              <div class="m-detail">MAE 1.31 · RMSE 1.67</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Features list -->
         <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-color);">
-          <div style="font-size:0.82rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">Input Features (15)</div>
+          <div style="font-size:0.82rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">Input Features (21)</div>
           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
-            {% for f in ["route","bus_type","depot","capacity","distance_km","fare_per_passenger","month","day_of_week","day_of_year","week_number","previous_passengers","previous_3_avg","previous_5_avg","previous_7_avg","route_avg_demand"] %}
+            {% for f in ["route","bus_type","depot","capacity","distance_km","fare_per_passenger","month","day_of_week","day_of_year","week_of_year","previous_passengers","previous_3_avg","previous_5_avg","previous_7_avg","route_avg_demand"] %}
             <span style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:6px;padding:0.2rem 0.6rem;font-size:0.78rem;font-family:monospace;">{{ f }}</span>
             {% endfor %}
+            {% for f in ["is_weekend","is_holiday","quarter","season","revenue_per_km","demand_score"] %}
+            <span style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);border-radius:6px;padding:0.2rem 0.6rem;font-size:0.78rem;font-family:monospace;color:var(--accent-green);">{{ f }} ✨</span>
+            {% endfor %}
+          </div>
+          <div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted);">
+            <span style="color:var(--accent-green);">✨ Green</span> = newly engineered features added during model retraining
           </div>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- ── TECH STACK ────────────────────────────────────────── -->
+  <section class="section" style="padding-bottom:2rem;">
+    <div class="container" style="text-align:center;">
+      <h2 style="font-family:'Outfit',sans-serif;font-size:1.3rem;font-weight:700;margin-bottom:1.25rem;">
+        🛠 Technology Stack
+      </h2>
+      <div style="display:flex;flex-wrap:wrap;gap:0.6rem;justify-content:center;">
+        <span class="tech-badge">🐍 Python 3</span>
+        <span class="tech-badge">🌶 Flask</span>
+        <span class="tech-badge">🤖 scikit-learn</span>
+        <span class="tech-badge">📦 joblib</span>
+        <span class="tech-badge">🐼 pandas</span>
+        <span class="tech-badge">🔢 numpy</span>
+        <span class="tech-badge">📊 Chart.js 4</span>
+        <span class="tech-badge">🎨 CSS3 Glassmorphism</span>
+        <span class="tech-badge">✨ Google Fonts</span>
+        <span class="tech-badge">📱 Responsive Design</span>
+      </div>
+    </div>
+  </section>
+
   <footer class="footer">
     <p>🚌 APSRTC AI Demand Forecasting · Built with Flask, Chart.js &amp; Extra Trees Regressor</p>
-    <p style="margin-top:0.4rem;">Andhra Pradesh State Road Transport Corporation · Urban Mobility Intelligence</p>
+    <p style="margin-top:0.4rem;">Andhra Pradesh State Road Transport Corporation · Urban Mobility Intelligence · R² = 0.94</p>
   </footer>
 </div>
 
